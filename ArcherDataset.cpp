@@ -210,7 +210,7 @@ void ArcherDataset::estimateGroundBBOX()
 			this->bbox->Expand( this->ImageToGround(min_x, y) );
 			this->bbox->Expand( this->ImageToGround(max_x, y) );
 		
-			meters_per_px_est += this->ins_data[y].alt - 213.36; /* Round off could kill this */
+			meters_per_px_est += this->ins_data[y].alt - 259.0; /* Round off could kill this */
 		}
 	}
 	
@@ -288,7 +288,7 @@ ArcherDataset::ArcherDataset(const char* proj, const char* src)
 	if(proj)
 		this->dest_proj = pj_init_plus(proj); // Should be NULL if failed... then don't reproject
 	else
-		this->dest_proj = pj_init_plus("+init=epsg:26915"); // Default to UTM15N Meters
+		this->dest_proj = pj_init_plus("+init=epsg:26914"); // Default to UTM14N Meters
 		
 	/* Open the GDAL dataset */
 	if(!src)

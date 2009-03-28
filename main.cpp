@@ -30,7 +30,7 @@ void usage(char* argv0)
 }
 
 int main(int argc, char* argv[]) {
-	char *projectionString = NULL;
+	char *projectionString = "+init=epsg:26914";
 	char *srcDataset  = NULL;
 	char *destDataset = NULL;
 	char *resolution  = NULL;

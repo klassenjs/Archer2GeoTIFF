@@ -171,7 +171,7 @@ int ArcherRectify::run()
 				// Note '-' sign it appears the sensor is 'backwards', i.e. 0 is right, 6144 is left
 				
 				double lens_angle = -radians_per_px * float(X - (number_of_px / 2.0)); /* x */
-				double elevation  =  ins[Y].alt - 213.36;   // TODO: Should get from elevation model /* x y */
+				double elevation  =  ins[Y].alt - 259.0;   // TODO: Should get from elevation model /* x y */
 
 				// Calculate x,y on ground relative to center of plane along direction of plane
 				double rel_plane_x = sin(lens_angle + ins[Y].roll) * elevation;
