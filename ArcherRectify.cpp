@@ -215,9 +215,9 @@ int ArcherRectify::run()
 									int offset = dst_xi+(dst_yi*dst_XSize)+(band*dst_XSize*dst_YSize);
 									
 									// Use gaussian pixel weighting (sinc*sinc) -- better/slower
-									float weight = expf(-sqrtf((dst_x-dst_xi)*(dst_x-dst_xi) + (dst_y-dst_yi)*(dst_y-dst_yi)));
+									//float weight = expf(-sqrtf((dst_x-dst_xi)*(dst_x-dst_xi) + (dst_y-dst_yi)*(dst_y-dst_yi)));
 									// Use linear pixel weighting -- approx/faster
-									//float weight = (1.0-abs(dst_x-dst_xi)) * (1.0-abs(dst_y-dst_yi));
+									float weight = (1.0-abs(dst_x-dst_xi)) * (1.0-abs(dst_y-dst_yi));
 
 									int p = scanline[X+src_XSize*band] * weight;
 
