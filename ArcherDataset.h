@@ -72,6 +72,7 @@ class BBox
 class ArcherDataset
 {
 	public:
+		ArcherDataset(const char* proj, const char* src, float fAverageGroundElevation, bool bRotateImage);
 		ArcherDataset(const char* proj, const char* src);
 		~ArcherDataset();
 	
@@ -90,7 +91,7 @@ class ArcherDataset
 		GDALDataset* gdal_ds;
 		projPJ WGS84;
 		projPJ dest_proj;
-	public:	
+	public:	// This stuff should be private but isn't so I could inline methods from this class in ArcherRectify.cpp:run()
 		struct {
 			double FOV; // Field of view of lens in degrees (this is used in the camera calcs)
 			double RollBias; // radians (file is in degrees)
@@ -106,6 +107,9 @@ class ArcherDataset
 		int image_width;
 		int image_bands;
 		
+		float fAverageGroundElevation; /* Average ground elevation above MSL WGS84... until we get a real elevation model) */
+		bool bRotateImage; /* if true rotates image to minimize image size (orients image along path of flight)
+							  otherwise image is oriented to grid north */
 		BBox *bbox;
 		double meters_per_px_est;
 		

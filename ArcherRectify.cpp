@@ -40,10 +40,11 @@ ArcherRectify::~ArcherRectify()
 int ArcherRectify::CreateOutputDataset(char* filename, BBox* bbox, double meters_per_pixel, int nBands, char* projection)
 {
 
-	int imgsize_x = ceil((bbox->maxx - bbox->minx) / meters_per_pixel);
-	int imgsize_y = ceil((bbox->maxy - bbox->miny) / meters_per_pixel);
+	double phi = bbox->phi;
+	int imgsize_x = ceil(( cos(phi) * (bbox->maxx - bbox->minx) + sin(phi) * (bbox->maxy - bbox->miny))  / meters_per_pixel);
+	int imgsize_y = ceil((-sin(phi) * (bbox->maxx - bbox->minx) + cos(phi) * (bbox->maxy - bbox->miny)) / meters_per_pixel); 
 	
-	printf("Creating output image %d x %d\n", imgsize_x, imgsize_y);
+	printf("Creating output image %d x %d at %lf m/px rotated %lf degrees\n", imgsize_x, imgsize_y, meters_per_pixel, phi*RAD_TO_DEG);
 
 	GDALAllRegister();
 	GDALDriverManager *gdal_drivers = GetGDALDriverManager();
@@ -51,14 +52,19 @@ int ArcherRectify::CreateOutputDataset(char* filename, BBox* bbox, double meters
 	GDALDataset *dst_ds = driver->Create(filename, imgsize_x, imgsize_y, nBands, GDT_Byte, (char**) NULL);
 	
 	/* Set geotransform in new dataset */
-	double top_left[2] = { bbox->minx, bbox->maxy };
-
+	double minx = 0;
+	//double miny = 0;
+	//double maxx =  (bbox->maxx - bbox->minx) * cos(phi) + (bbox->maxy - bbox->miny) * sin(phi);
+	double maxy = -(bbox->maxx - bbox->minx) * sin(phi) + (bbox->maxy - bbox->miny) * cos(phi);
+	
+	double tl_x =  minx * cos(-phi) + maxy * sin(-phi) + bbox->minx;
+	double tl_y = -minx * sin(-phi) + maxy * cos(-phi) + bbox->miny;
+	
 	// TODO: Make photo follow average plane heading to minimize unused pixels .. requires rotate bbox
-	//double phi = -this->archer->GetINSData()[0].heading;
-	//double geo_transform[6] = { top_left[0], meters_per_pixel * cos(phi), meters_per_pixel * sin(phi), top_left[1], meters_per_pixel * sin(phi), -meters_per_pixel * cos(phi) };
+	double geo_transform[6] = { tl_x, meters_per_pixel * cos(phi), meters_per_pixel * sin(phi), tl_y, meters_per_pixel * sin(phi), -meters_per_pixel * cos(phi) };
 
 	// Make photo with North = UP;
-	double geo_transform[6] = { top_left[0], meters_per_pixel, 0, top_left[1], 0, -meters_per_pixel };
+	//double geo_transform[6] = { top_left[0], meters_per_pixel, 0, top_left[1], 0, -meters_per_pixel };
 	dst_ds->SetGeoTransform(geo_transform);
 	
 	/* Set output projection in new dataset */
@@ -110,7 +116,7 @@ int ArcherRectify::run()
 	
 	GDALAllRegister();
 	outImageType* dst_image;
-	short* counts;
+	float* counts;
 	double dst_gt[6];
 
 	GDALDataset *src_ds = this->archer->GetGDALDataset();
@@ -135,14 +141,15 @@ int ArcherRectify::run()
 	dst_image = (outImageType*)malloc(memory_req);
 	bzero(dst_image, memory_req);
 	
-	counts = (short*)malloc(sizeof(short) * dst_XSize * dst_YSize * band_count);
-	bzero(counts, sizeof(short) * dst_XSize * dst_YSize * band_count);
+	counts = (float*)malloc(sizeof(float) * dst_XSize * dst_YSize * band_count);
+	bzero(counts, sizeof(float) * dst_XSize * dst_YSize * band_count);
 	
 	const int progress_interval = src_YSize / 100;
 	int progress = progress_interval;
 	
 	/* Setup src px -> ground */
 	ArcherINSRow *ins = this->archer->GetINSData();
+	float ground_elevation = this->archer->fAverageGroundElevation;
 	const int number_of_px   = src_XSize; /*const*/
 	const double radians_per_px = (this->archer->ArcherENVIHdr.FOV * DEG_TO_RAD) / number_of_px; /*const*/
 
@@ -171,7 +178,7 @@ int ArcherRectify::run()
 				// Note '-' sign it appears the sensor is 'backwards', i.e. 0 is right, 6144 is left
 				
 				double lens_angle = -radians_per_px * float(X - (number_of_px / 2.0)); /* x */
-				double elevation  =  ins[Y].alt - 259.0;   // TODO: Should get from elevation model /* x y */
+				double elevation  =  ins[Y].alt - ground_elevation;   // TODO: Should get from elevation model /* x y */
 
 				// Calculate x,y on ground relative to center of plane along direction of plane
 				double rel_plane_x = sin(lens_angle + ins[Y].roll) * elevation;
@@ -197,6 +204,7 @@ int ArcherRectify::run()
 			dst_x = (dst_gt[5] * xx - dst_gt[2] * yy) / invdet;
 			dst_y = (-dst_gt[4] * xx + dst_gt[1] * yy) / invdet;
 			
+			//printf("%.0lf %.0lf\n", dst_x, dst_y);
 
 			for(int band = 0; band < band_count ; band++) {
 				/* Perform Gaussian Kernel */
@@ -205,9 +213,21 @@ int ArcherRectify::run()
 						{ /* set_px inlined */
 							if(dst_xi >= 0 && dst_xi < dst_XSize && dst_yi >= 0 && dst_yi < dst_YSize) {
 									int offset = dst_xi+(dst_yi*dst_XSize)+(band*dst_XSize*dst_YSize);
-									//dst_image[offset] += scanline[X] * expf(-sqrtf((dst_x-dst_xi)*(dst_x-dst_xi) + (dst_y-dst_yi)*(dst_y-dst_yi)));
-									dst_image[offset] += scanline[X+src_XSize*band] * (1.0-abs(dst_x-dst_xi)) * (1.0-abs(dst_y-dst_yi));
-									counts[offset]++;
+									
+									// Use gaussian pixel weighting (sinc*sinc) -- better/slower
+									float weight = expf(-sqrtf((dst_x-dst_xi)*(dst_x-dst_xi) + (dst_y-dst_yi)*(dst_y-dst_yi)));
+									// Use linear pixel weighting -- approx/faster
+									//float weight = (1.0-abs(dst_x-dst_xi)) * (1.0-abs(dst_y-dst_yi));
+
+									int p = scanline[X+src_XSize*band] * weight;
+
+									// linear (amplitude/coherent light) add
+									//dst_image[offset] += p;
+									//counts[offseet] += weight;
+									
+									// uncorrelated source power add (sqrt of sum of squares)
+									dst_image[offset] += p * p;
+									counts[offset] += weight * weight;
 							}
 						}
 					}
@@ -218,6 +238,7 @@ int ArcherRectify::run()
 	for(int i = 0; i < dst_XSize * dst_YSize * band_count; i++) {
 		if(counts[i] > 0)
 			dst_image[i] = dst_image[i] / (float)counts[i];
+			dst_image[i] = sqrt(dst_image[i]);
 	}
 	
 	/* TODO: Is this a valid thing to do for the HSI images? */

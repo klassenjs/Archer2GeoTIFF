@@ -30,14 +30,48 @@ BBox::BBox(double minx, double miny, double maxx, double maxy)
 	this->miny = miny;
 	this->maxx = maxx;
 	this->maxy = maxy;
+	this->phi = 0;
 }
 
 void BBox::Expand(Point pt)
 {
-	if(this->minx > pt.x) this->minx = pt.x;
-	if(this->miny > pt.y) this->miny = pt.y;
-	if(this->maxx < pt.x) this->maxx = pt.x;
-	if(this->maxy < pt.y) this->maxy = pt.y;
+	double phi = this->phi;
+
+	// Shift BBOX to 0,0 and rotate.
+	double minx = 0;
+	double miny = 0;
+	double maxx = this->maxx - this->minx;
+	double maxy = this->maxy - this->miny;
+	double pt_x = pt.x - this->minx;
+	double pt_y = pt.y - this->miny;
+
+	// Rotate about (0,0) by phi so we are in BBOX coordinates
+	double minx_r = 0;
+	double miny_r = 0;
+	double maxx_r =   maxx * cos(phi) + maxy * sin(phi);
+	double maxy_r = - maxx * sin(phi) + maxy * cos(phi);
+	double pt_x_r =   pt_x * cos(phi) + pt_y * sin(phi);
+	double pt_y_r = - pt_x * sin(phi) + pt_y * cos(phi);
+
+	// Expand the BBOX in its corrdinates
+	if(minx_r > pt_x_r) minx_r = pt_x_r;
+	if(miny_r > pt_y_r) miny_r = pt_y_r;
+	if(maxx_r < pt_x_r) maxx_r = pt_x_r;
+	if(maxy_r < pt_y_r) maxy_r = pt_y_r;
+	
+	// Rotate back
+	minx =   minx_r * cos(-phi) + miny_r * sin(-phi);
+	miny = - minx_r * sin(-phi) + miny_r * cos(-phi);
+	maxx =   maxx_r * cos(-phi) + maxy_r * sin(-phi);
+	maxy = - maxx_r * sin(-phi) + maxy_r * cos(-phi);
+	pt_x =   pt_x_r * cos(-phi) + pt_y_r * sin(-phi);
+	pt_y = - pt_x_r * sin(-phi) + pt_y_r * cos(-phi);
+	
+	// Shift back
+	this->maxx = maxx + this->minx;
+	this->minx = minx + this->minx;
+	this->maxy = maxy + this->miny;
+	this->miny = miny + this->miny;
 }
 
 void ArcherDataset::readHDRFile(const char* src)
@@ -180,14 +214,6 @@ void ArcherDataset::calculateINSParameters()
 												this->ins_data[row].x - this->ins_data[row-100].x);
 	
 	}
-
-	// TODO: Get better looking results of just take one heading instead of for every point
-	// TODO: This will probably cause positional errors.
-//	double heading = M_PI_2 - atan2( this->ins_data[rows-1].y - this->ins_data[0].y, 
-//									this->ins_data[rows-1].x - this->ins_data[0].x);
-//	for(row = 0; row < rows; row++) {
-//		this->ins_data[row].heading = heading;
-//	}
 }
 
 /* Calculate estimated ground BBOX (assumes no elevation) */
@@ -204,13 +230,18 @@ void ArcherDataset::estimateGroundBBOX()
 	/* Init the BBOX to the first center point */
 	this->bbox = new BBox(this->ins_data[0].x, this->ins_data[0].y, this->ins_data[0].x, this->ins_data[0].y);
 	
+	//printf("%lf %lf\n", this->ins_data[max_y-1].x - this->ins_data[0].x, this->ins_data[max_y-1].y - this->ins_data[0].y);
+	this->bbox->phi = 0; // Disable image rotation;
+	if(this->bRotateImage)
+		this->bbox->phi = atan2( this->ins_data[max_y-1].y - this->ins_data[0].y, 
+												this->ins_data[max_y-1].x - this->ins_data[0].x);
 	/* Check the end points of each scan and use that to determine a bbox */
 	for(int y = min_y; y < max_y; y++) {
 		if(this->ins_data[y].unk3 == 5) {
 			this->bbox->Expand( this->ImageToGround(min_x, y) );
 			this->bbox->Expand( this->ImageToGround(max_x, y) );
 		
-			meters_per_px_est += this->ins_data[y].alt - 259.0; /* Round off could kill this */
+			meters_per_px_est += this->ins_data[y].alt - this->fAverageGroundElevation; /* Round off could kill this */
 		}
 	}
 	
@@ -253,7 +284,7 @@ const Point ArcherDataset::ImageToGround(IPoint pt)
 
 	// Note '-' sign it appears the sensor is 'backwards', i.e. 0 is right, 6144 is left
 	double lens_angle = -radians_per_px * float(pt.x - (number_of_px / 2.0)); /* x */
-	double elevation  =  d->alt - 213.36;   // TODO: Should get from elevation model /* x y */
+	double elevation  =  d->alt - this->fAverageGroundElevation;   // TODO: Should get from elevation model /* x y */
 
 	// Calculate x,y on ground relative to center of plane along direction of plane
 	double rel_plane_x = sin(lens_angle + d->roll) * elevation;
@@ -284,12 +315,19 @@ const Point ArcherDataset::ImageToGround(int img_x, int img_y)
 
 ArcherDataset::ArcherDataset(const char* proj, const char* src)
 {
+	ArcherDataset(proj, src, 259.0, false);
+}
+ArcherDataset::ArcherDataset(const char* proj, const char* src, float fAverageGroundElevation, bool bRotateImage)
+{
 	this->WGS84 = pj_init_plus("+init=epsg:4326"); // WGS84
 	if(proj)
 		this->dest_proj = pj_init_plus(proj); // Should be NULL if failed... then don't reproject
 	else
-		this->dest_proj = pj_init_plus("+init=epsg:26914"); // Default to UTM14N Meters
-		
+		this->dest_proj = pj_init_plus("+init=epsg:26915"); // Default to UTM15N Meters
+	
+	this->fAverageGroundElevation = fAverageGroundElevation;
+	this->bRotateImage = bRotateImage;
+	
 	/* Open the GDAL dataset */
 	if(!src)
 		throw(std::out_of_range("Source dataset not specified"));  
