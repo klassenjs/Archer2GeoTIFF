@@ -43,13 +43,21 @@ int ArcherRectify::CreateOutputDataset(char* filename, BBox* bbox, double meters
 	double phi = bbox->phi;
 	int imgsize_x = ceil(( cos(phi) * (bbox->maxx - bbox->minx) + sin(phi) * (bbox->maxy - bbox->miny))  / meters_per_pixel);
 	int imgsize_y = ceil((-sin(phi) * (bbox->maxx - bbox->minx) + cos(phi) * (bbox->maxy - bbox->miny)) / meters_per_pixel); 
-	
+	char* options[6];
+
+	options[0] = "INTERLEAVE=BAND";
+	options[1] = "TILED=YES";
+	options[2] = "COMPRESS=DEFLATE";
+        options[3] = "ZLEVEL=3";
+	options[4] = "PREDICTOR=1";	
+	options[5] = NULL;
+
 	printf("Creating output image %d x %d at %lf m/px rotated %lf degrees\n", imgsize_x, imgsize_y, meters_per_pixel, phi*RAD_TO_DEG);
 
 	GDALAllRegister();
 	GDALDriverManager *gdal_drivers = GetGDALDriverManager();
 	GDALDriver *driver = gdal_drivers->GetDriverByName("GTiff");
-	GDALDataset *dst_ds = driver->Create(filename, imgsize_x, imgsize_y, nBands, GDT_Byte, (char**) NULL);
+	GDALDataset *dst_ds = driver->Create(filename, imgsize_x, imgsize_y, nBands, GDT_Byte, options);
 	
 	/* Set geotransform in new dataset */
 	double minx = 0;
