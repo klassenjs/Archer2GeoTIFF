@@ -119,7 +119,7 @@ void ArcherDataset::readHDRFile(const char* src)
 void ArcherDataset::printINSData()
 {
 	for(int i = 0; i < this->ins_rows; i++) 
-		printf("%d %lf %lf %lf %lf %lf %lf %d %d %d %lf %d, %lf %lf %lf\n", 
+		printf("%ld %lf %lf %lf %lf %lf %lf %d %d %d %lf %d, %lf %lf %lf\n", 
 				this->ins_data[i].sequence,
 				this->ins_data[i].roll,
 				this->ins_data[i].pitch,
@@ -154,7 +154,7 @@ void ArcherDataset::readINSFile(const char* fname)
 				this->ins_data = (ArcherINSRow*) realloc(this->ins_data, alloc_rows * sizeof(ArcherINSRow));
 			}
 	
-			fscanf(in_file, "%d %lf %lf %lf %lf %lf %lf %d %d %d %lf %d\n",
+			fscanf(in_file, "%ld %lf %lf %lf %lf %lf %lf %d %d %d %lf %d\n",
 				&this->ins_data[used_rows].sequence,
 				&this->ins_data[used_rows].roll,
 				&this->ins_data[used_rows].pitch,
