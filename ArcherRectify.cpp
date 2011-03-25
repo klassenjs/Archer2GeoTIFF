@@ -48,7 +48,7 @@ int ArcherRectify::CreateOutputDataset(char* filename, BBox* bbox, double meters
 	options[0] = "INTERLEAVE=BAND";
 	options[1] = "TILED=YES";
 	options[2] = "COMPRESS=DEFLATE";
-        options[3] = "ZLEVEL=3";
+    options[3] = "ZLEVEL=3";
 	options[4] = "PREDICTOR=1";	
 	options[5] = NULL;
 
@@ -139,20 +139,20 @@ int ArcherRectify::run()
 	const int dst_YSize = dst_ds->GetRasterYSize();
 	const int band_count = src_ds->GetRasterCount();
 
+	int start_band, end_band;
+	int bands = (band_count>13)? 13 : band_count;
+
 	/* Create input scanline buffer */
 	outImageType *scanline;
-	scanline = (outImageType*) malloc(sizeof(outImageType) * src_XSize * band_count);
+	scanline = (outImageType*) malloc(sizeof(outImageType) * src_XSize * bands);
 
 	/* Create output buffer */
-	size_t memory_req = sizeof(outImageType) * dst_XSize * dst_YSize * band_count;
+	size_t memory_req = sizeof(outImageType) * dst_XSize * dst_YSize * bands;
 	printf("Mallocing %.0f MB for output buffer\n", (float)memory_req / (1024.0 * 1024.0));
 	dst_image = (outImageType*)malloc(memory_req);
-	bzero(dst_image, memory_req);
+	counts = (float*)malloc(sizeof(float) * dst_XSize * dst_YSize * bands);
 	
-	counts = (float*)malloc(sizeof(float) * dst_XSize * dst_YSize * band_count);
-	bzero(counts, sizeof(float) * dst_XSize * dst_YSize * band_count);
-	
-	const int progress_interval = src_YSize / 100;
+	const int progress_interval = 4 * src_YSize / 100;
 	int progress = progress_interval;
 	
 	/* Setup src px -> ground */
@@ -161,21 +161,30 @@ int ArcherRectify::run()
 	const int number_of_px   = src_XSize; /*const*/
 	const double radians_per_px = (this->archer->ArcherENVIHdr.FOV * DEG_TO_RAD) / number_of_px; /*const*/
 
+    /* Handle bands in blocks of 10 to limit memory usage in HSI case */
+    for(start_band = 0; start_band < band_count; start_band += 13)  {
+        end_band = (start_band + 13 > band_count)? band_count : start_band + 13;
+	bands = end_band - start_band;
+	//printf("start: %d, bands: %d\n", start_band, bands);
+
+	/* Clear Output Buffer */
+	bzero(dst_image, memory_req);
+	bzero(counts, sizeof(float) * dst_XSize * dst_YSize * bands);
 	/* For each pixel in the source, place it in the destination */
 	for(int Y = 0; Y < src_YSize; Y++) {
 		progress--;
 		if(progress <= 0) {
-			printf("%.0f %%\n", 100.0 * (float)Y / (float)src_YSize);
+			printf("%.0f %%\n", 100.0 * ((float)start_band/(float)band_count + ((float)bands/(float)band_count * (float)Y / (float)src_YSize)) );
 			progress = progress_interval;
 		}
 		if(ins[Y].unk3 != 5) { /* Looks like 1,4 => no lock, 5 => valid data */
 			continue;
 		}
 		/* Fetch the bands into memory */
-		for(int band = 0; band < band_count ; band++) {
-			src_ds->GetRasterBand( band+1 )->RasterIO( GF_Read, 0, Y, src_XSize, 1, scanline+(src_XSize*band), src_XSize, 1, IMAGE_GDAL_TYPE, 0, 0);
+		for(int band = 0; band < bands ; band++) {
+			src_ds->GetRasterBand( start_band+band+1 )->RasterIO( GF_Read, 0, Y, src_XSize, 1, scanline+(src_XSize*band), src_XSize, 1, IMAGE_GDAL_TYPE, 0, 0);
 		}
-			
+		//src_ds->RasterIO( GF_Read, 0, Y, src_XSize, 1, scanline, src_XSize, 1, IMAGE_GDAL_TYPE, band_count, NULL, 0, 0, 0);	
 
 		for(int X = 0; X < src_XSize; X++) {
 			Point ground;
@@ -214,7 +223,7 @@ int ArcherRectify::run()
 			
 			//printf("%.0lf %.0lf\n", dst_x, dst_y);
 
-			for(int band = 0; band < band_count ; band++) {
+			for(int band = 0; band < bands ; band++) {
 				/* Perform Gaussian Kernel */
 				for(dst_yi = floor(dst_y) - 1; dst_yi < floor(dst_y) + 2; dst_yi++)
 					for(dst_xi = floor(dst_x) - 1; dst_xi < floor(dst_x) + 2; dst_xi++) {
@@ -243,14 +252,15 @@ int ArcherRectify::run()
 		}
 	}
 	/* Scale pixels */
-	for(int i = 0; i < dst_XSize * dst_YSize * band_count; i++) {
+	for(int i = 0; i < dst_XSize * dst_YSize * bands; i++) {
 		if(counts[i] > 0)
 			dst_image[i] = dst_image[i] / (float)counts[i];
 			dst_image[i] = sqrt(dst_image[i]);
 	}
 	
 	/* TODO: Is this a valid thing to do for the HSI images? */
-	for(int band = 0; band < band_count; band++) {
+	for(int band = 0; band < bands; band++) {
+//			printf("band: %d\n", band);
 			long start = band * dst_XSize * dst_YSize;
 			long end   = start + dst_XSize * dst_YSize;
 			
@@ -267,14 +277,14 @@ int ArcherRectify::run()
 			}
 	
 			/* Write destination buffer to file */
-			GDALRasterBand *dst_band = dst_ds->GetRasterBand( band+1 );
+			GDALRasterBand *dst_band = dst_ds->GetRasterBand( start_band+band+1 );
 			dst_band->SetNoDataValue(0.0);
 			dst_band->RasterIO( GF_Write, 0, 0, dst_XSize, dst_YSize, dst_image+start, dst_XSize, dst_YSize, IMAGE_GDAL_TYPE, 0, 0);
 	}
-		
+    }
 	/* Build pyrimids */
 	int anOverviewList[3] = { 2, 4, 8 };
-	dst_ds->BuildOverviews("NEAREST", 3, anOverviewList, 0, NULL, GDALDummyProgress, NULL);
+	dst_ds->BuildOverviews("AVERAGE", 3, anOverviewList, 0, NULL, GDALDummyProgress, NULL);
 	
 	/* Cleanup */
 	free(scanline);
