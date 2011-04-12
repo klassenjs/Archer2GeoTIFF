@@ -192,7 +192,28 @@ void ArcherDataset::calculateINSParameters()
 	projPJ dst = this->dest_proj;
 	
 	double easting, northing;
+
+	double x0 = 0;
+	double y0 = 0;
+
+	double dx0 = 0;
+	double dy0 = 0;
 	
+	double Q = 1e-4;
+	double R = 1e-2;
+
+	double x_, y_;
+	double x1, y1;
+	double Px0, Py0;
+	double Px_, Py_;
+	double Kx0, Ky0;
+	
+	northing = this->ins_data[0].lat * DEG_TO_RAD;
+	easting  = this->ins_data[0].lon * DEG_TO_RAD;
+	
+	pj_transform(src, dst, 1, 0, &easting, &northing, NULL);
+	x0 = easting;
+	y0 = northing;
 	/* Calculate the projected ground coordinates of the plane's track */
 	for(row = 0; row < rows; row++) {
 		northing = this->ins_data[row].lat * DEG_TO_RAD;
@@ -200,11 +221,31 @@ void ArcherDataset::calculateINSParameters()
 		
 		pj_transform(src, dst, 1, 0, &easting, &northing, NULL);
 
-		this->ins_data[row].x = easting;
-		this->ins_data[row].y = northing;
+		/* Time Update Step */
+		x_ = x0 + dx0;
+		y_ = y0 + dy0;
+		Px_ = Px0 + Q;
+		Py_ = Py0 + Q;
+
+		/* Measurement Update Step */
+		Kx0 = Px_ / (Px_ + R);
+		Ky0 = Py_ / (Py_ + R);
+
+		x1 = x_ + Kx0 * (easting - x_);
+		Px0 = (1 - Kx0) * Px_;
+
+		y1 = y_ + Ky0 * (northing - y_);
+		Py0 = (1 - Ky0) * Py_;
+
+		dx0 = x1 - x0;
+		dy0 = y1 - y0;
+
+		this->ins_data[row].x = x0 = x1;
+		this->ins_data[row].y = y0 = y1;
 	}
 	
 	/* TODO: Assumes more than 100 lines in photo */
+	/* 
 	for(row = 0; row < rows - 100; row++) {
 		this->ins_data[row].heading = M_PI_2 - atan2( this->ins_data[row+100].y - this->ins_data[row].y, 
 												this->ins_data[row+100].x - this->ins_data[row].x);
@@ -214,6 +255,45 @@ void ArcherDataset::calculateINSParameters()
 												this->ins_data[row].x - this->ins_data[row-100].x);
 	
 	}
+ 	*/
+
+	/* Kalman 1-D on heading implementation */
+	//double x0 = 0;  // State (because no driving eq.. could add in dx/dt, but expect it to be ~ 0)
+	//double x_ = 0;  // Predicted Next State
+
+	double z0;  // Current Measurement ( atan2 ...)
+
+	//double Q = 1e-5; // Process variance (in radians^2).
+	//double R = 0.61; // Measurement variance (in radians^2). (pi/4)^2
+
+	//double P0;
+	//double P_;
+	//double K0;  
+	
+	for(row = 0; row < rows - 1; row++) {
+		/* Time Update Step */
+	//	x_ = x0;  // + motion estimate
+	//	P_ = P0 + Q;
+
+		/* Measurement Update Step */
+		z0 = M_PI_2 - atan2( this->ins_data[row+1].y - this->ins_data[row].y,
+		                     this->ins_data[row+1].x - this->ins_data[row].x);
+
+	//	K0 = P_ / (P_ + R);
+
+	//	x0 = x_ + K0 * (z0 - x_);
+	//	P0 = (1 - K0) * P_;
+
+		/* Update Record */
+	
+	//	this->ins_data[row].heading = x0;
+		this->ins_data[row].heading = z0;
+
+	//	fprintf(stderr, "x[%d] = %lf, P[%d] = %lf\n", row, x0, row, P0);
+	}	
+	this->ins_data[row].heading = z0;
+
+	/* Other option.. 2-D Kalman on X,Y and calc heading directly */
 }
 
 /* Calculate estimated ground BBOX (assumes no elevation) */
