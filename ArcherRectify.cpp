@@ -252,34 +252,39 @@ int ArcherRectify::run()
 		}
 	}
 	/* Scale pixels */
-	for(int i = 0; i < dst_XSize * dst_YSize * bands; i++) {
-		if(counts[i] > 0)
-			dst_image[i] = dst_image[i] / (float)counts[i];
-			dst_image[i] = sqrt(dst_image[i]);
-	}
-	
 	/* TODO: Is this a valid thing to do for the HSI images? */
 	for(int band = 0; band < bands; band++) {
-//			printf("band: %d\n", band);
-			long start = band * dst_XSize * dst_YSize;
-			long end   = start + dst_XSize * dst_YSize;
-			
-			/* Rescale output buffer to 0-256 */
-			outImageType min = dst_image[start];
-			outImageType max = dst_image[start];
-			for(int i = start; i < end; i++) {
+//		printf("Normalizing and writing band: %d\n", band);
+		long start = band * dst_XSize * dst_YSize;
+		long end   = start + dst_XSize * dst_YSize;
+		
+		/* Rescale output buffer to 0=NODATA, 1-255 */
+		/* TODO: this would be better to do with a mask band but then we'd need GDAL 1.8+ */
+		outImageType min = INFINITY; //dst_image[start];
+		outImageType max = -INFINITY; // dst_image[start];
+
+		for(int i = start; i < end; i++) {
+			if(counts[i] > 0) { // Don't count nodata pixels
+				dst_image[i] = dst_image[i] / (float)counts[i];
+				dst_image[i] = sqrt(dst_image[i]);
+
 				if(dst_image[i] < min) min = dst_image[i];
 				if(dst_image[i] > max) max = dst_image[i];
 			}
-			float scale = 256 / (max - min);
-			for(int i = start; i < end; i++) {
-				dst_image[i] = (dst_image[i] - min) * scale;
-			}
-	
-			/* Write destination buffer to file */
-			GDALRasterBand *dst_band = dst_ds->GetRasterBand( start_band+band+1 );
-			dst_band->SetNoDataValue(0.0);
-			dst_band->RasterIO( GF_Write, 0, 0, dst_XSize, dst_YSize, dst_image+start, dst_XSize, dst_YSize, IMAGE_GDAL_TYPE, 0, 0);
+		}
+
+		float scale = 255 / (max - min); // Scale 1-255
+		for(int i = start; i < end; i++) {
+			if(counts > 0) 
+				dst_image[i] = ((dst_image[i] - min) * scale) + 1; // +1 to allow 0 to be nodata.
+			else
+				dst_image[i] = 0; // If counts = 0 then set NODATA.
+		}
+
+		/* Write destination buffer to file */
+		GDALRasterBand *dst_band = dst_ds->GetRasterBand( start_band+band+1 );
+		dst_band->SetNoDataValue(0.0);
+		dst_band->RasterIO( GF_Write, 0, 0, dst_XSize, dst_YSize, dst_image+start, dst_XSize, dst_YSize, IMAGE_GDAL_TYPE, 0, 0);
 	}
     }
 	/* Build pyrimids */
