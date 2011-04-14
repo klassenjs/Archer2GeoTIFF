@@ -192,7 +192,7 @@ void ArcherDataset::calculateINSParameters()
 	projPJ dst = this->dest_proj;
 	
 	double easting, northing;
-	
+
 	/* Calculate the projected ground coordinates of the plane's track */
 	for(row = 0; row < rows; row++) {
 		northing = this->ins_data[row].lat * DEG_TO_RAD;
@@ -214,7 +214,7 @@ void ArcherDataset::calculateINSParameters()
 		this->ins_data[row].heading = M_PI_2 - atan2( this->ins_data[row].y - this->ins_data[row-1].y,   
 		                                              this->ins_data[row].x - this->ins_data[row-1].x);
 		return;
-	}
+	} 
 
 	/* The first 50 rows */
 	for(row = 0; row < 50; row++) {
@@ -340,10 +340,13 @@ ArcherDataset::ArcherDataset(const char* proj, const char* src)
 ArcherDataset::ArcherDataset(const char* proj, const char* src, float fAverageGroundElevation, bool bRotateImage)
 {
 	this->WGS84 = pj_init_plus("+init=epsg:4326"); // WGS84
-	if(proj)
+	if(proj) {
 		this->dest_proj = pj_init_plus(proj); // Should be NULL if failed... then don't reproject
-	else
-		this->dest_proj = pj_init_plus("+init=epsg:26915"); // Default to UTM15N Meters
+		if(this->dest_proj == NULL) 
+			printf("WARNING: Destination projection not found! Defaulting to WGS84\n");
+	}
+	if(this->dest_proj == NULL)	
+		this->dest_proj = pj_init_plus("+init=epsg:4326"); // Default to WGS84
 	
 	this->fAverageGroundElevation = fAverageGroundElevation;
 	this->bRotateImage = bRotateImage;
