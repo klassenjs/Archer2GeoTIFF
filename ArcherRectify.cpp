@@ -264,7 +264,7 @@ int ArcherRectify::run()
 		outImageType max = -INFINITY; // dst_image[start];
 
 		for(int i = start; i < end; i++) {
-			if(counts[i] > 0) { // Don't count nodata pixels
+			if(counts[i] > 0.01) { // Don't count nodata pixels
 				dst_image[i] = dst_image[i] / (float)counts[i];
 				dst_image[i] = sqrt(dst_image[i]);
 
@@ -275,7 +275,7 @@ int ArcherRectify::run()
 
 		float scale = 255 / (max - min); // Scale 1-255
 		for(int i = start; i < end; i++) {
-			if(counts > 0) 
+			if(counts[i] > 0.01) 
 				dst_image[i] = ((dst_image[i] - min) * scale) + 1; // +1 to allow 0 to be nodata.
 			else
 				dst_image[i] = 0; // If counts = 0 then set NODATA.
