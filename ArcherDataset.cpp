@@ -354,10 +354,12 @@ ArcherDataset::ArcherDataset(const char* proj, const char* src, float fAverageGr
 	if(proj) {
 		this->dest_proj = pj_init_plus(proj); // Should be NULL if failed... then don't reproject
 		if(this->dest_proj == NULL) 
-			printf("WARNING: Destination projection not found! Defaulting to WGS84\n");
+			printf("WARNING: Destination projection not found! Defaulting to UTM15N NAD83\n");
 	}
 	if(this->dest_proj == NULL)	
-		this->dest_proj = pj_init_plus("+init=epsg:4326"); // Default to WGS84
+		this->dest_proj = pj_init_plus("+init=epsg:26915"); // Default to UTM
+
+	/* TODO: check that dest_proj is in meters */
 	
 	this->fAverageGroundElevation = fAverageGroundElevation;
 	this->bRotateImage = bRotateImage;
