@@ -21,6 +21,7 @@
  */
 
 #include "ArcherDataset.h"
+#include <exception>
 #include <stdexcept>
 #include <string>
 
@@ -96,21 +97,21 @@ void ArcherDataset::readHDRFile(const char* src)
 	double val;
 	if(hdr_file) {
 		while(!feof(hdr_file)) {
-			fgets(buffer, 1024, hdr_file);
-			if(sscanf(buffer, "FOV = %lf\n", &val))
-				this->ArcherENVIHdr.FOV = val;
-			else if(sscanf(buffer, "Roll Bias = %lf\n", &val))
-				this->ArcherENVIHdr.RollBias = val * DEG_TO_RAD;
-			else if(sscanf(buffer, "Pitch Bias = %lf\n", &val))
-				this->ArcherENVIHdr.PitchBias = val * DEG_TO_RAD;
-			else if(sscanf(buffer, "Heading Bias = %lf\n", &val))
-				this->ArcherENVIHdr.HeadingBias = val * DEG_TO_RAD;
-			else if(sscanf(buffer, "Longitude Bias = %lf\n", &val))
-				this->ArcherENVIHdr.LongitudeBias = val;
-			else if(sscanf(buffer, "Latitude Bias = %lf\n", &val))
-				this->ArcherENVIHdr.LatitudeBias = val;
-			else if(sscanf(buffer, "Altitude Bias = %lf\n", &val))
-				this->ArcherENVIHdr.AltitudeBias = val;
+			if(fgets(buffer, 1024, hdr_file))
+				if(sscanf(buffer, "FOV = %lf\n", &val))
+					this->ArcherENVIHdr.FOV = val;
+				else if(sscanf(buffer, "Roll Bias = %lf\n", &val))
+					this->ArcherENVIHdr.RollBias = val * DEG_TO_RAD;
+				else if(sscanf(buffer, "Pitch Bias = %lf\n", &val))
+					this->ArcherENVIHdr.PitchBias = val * DEG_TO_RAD;
+				else if(sscanf(buffer, "Heading Bias = %lf\n", &val))
+					this->ArcherENVIHdr.HeadingBias = val * DEG_TO_RAD;
+				else if(sscanf(buffer, "Longitude Bias = %lf\n", &val))
+					this->ArcherENVIHdr.LongitudeBias = val;
+				else if(sscanf(buffer, "Latitude Bias = %lf\n", &val))
+					this->ArcherENVIHdr.LatitudeBias = val;
+				else if(sscanf(buffer, "Altitude Bias = %lf\n", &val))
+					this->ArcherENVIHdr.AltitudeBias = val;
 		}
 		fclose(hdr_file);
 	}
@@ -147,26 +148,36 @@ void ArcherDataset::readINSFile(const char* fname)
 	int alloc_rows = 1024;
 	int used_rows = 0;
 	this->ins_data = (ArcherINSRow*)malloc(1024 * sizeof(ArcherINSRow));
+
+	if(this->ins_data == NULL)
+		throw(std::bad_alloc());
 	
 	while(!feof(in_file)) {
 			if(used_rows >= alloc_rows) {
 				alloc_rows += 1024;
-				this->ins_data = (ArcherINSRow*) realloc(this->ins_data, alloc_rows * sizeof(ArcherINSRow));
+				ArcherINSRow* p = (ArcherINSRow*) realloc(this->ins_data, alloc_rows * sizeof(ArcherINSRow));
+				if(p == NULL)
+					throw(std::bad_alloc());
+
+				this->ins_data = p;
 			}
 	
-			fscanf(in_file, "%ld %lf %lf %lf %lf %lf %lf %d %d %d %lf %d\n",
-				&this->ins_data[used_rows].sequence,
-				&this->ins_data[used_rows].roll,
-				&this->ins_data[used_rows].pitch,
-				&this->ins_data[used_rows].yaw,
-				&this->ins_data[used_rows].lon,
-				&this->ins_data[used_rows].lat,
-				&this->ins_data[used_rows].alt,
-				&this->ins_data[used_rows].unk1,
-				&this->ins_data[used_rows].unk2,
-				&this->ins_data[used_rows].unk3,
-				&this->ins_data[used_rows].time,
-				&this->ins_data[used_rows].unk4);
+			int cnt = fscanf(in_file, "%ld %lf %lf %lf %lf %lf %lf %d %d %d %lf %d\n",
+				         &this->ins_data[used_rows].sequence,
+				         &this->ins_data[used_rows].roll,
+				         &this->ins_data[used_rows].pitch,
+				         &this->ins_data[used_rows].yaw,
+				         &this->ins_data[used_rows].lon,
+				         &this->ins_data[used_rows].lat,
+				         &this->ins_data[used_rows].alt,
+				         &this->ins_data[used_rows].unk1,
+				         &this->ins_data[used_rows].unk2,
+				         &this->ins_data[used_rows].unk3,
+				         &this->ins_data[used_rows].time,
+				         &this->ins_data[used_rows].unk4);
+			if(cnt != 12)	
+				printf("WARNING: malformed line in INS data\n");
+
 			this->ins_data[used_rows].yaw *= DEG_TO_RAD; /* File is in degrees, we need radians */
 			
 			/* Use the biases included from the HDR file so we don't have to calc this every time */
